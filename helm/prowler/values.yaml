@@ -1,0 +1,92 @@
+# Default values for prowler.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+environment: staging
+aws_account_id: "521302543345"
+region: us-east-2
+db_customer_name: customer1
+
+image:
+  repository: prowler
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+containerPort: 5001
+
+revisionHistoryLimit: 3
+
+domain:
+  type: internal
+  name: m3s5.com
+
+service:
+  type: ClusterIP
+  port: 5001
+
+ingress:
+  enabled: true
+  className: "nginx-internal"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-body-size: 100m 
+  hosts:
+    - host: "prowler"
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+resources: 
+  limits:
+    cpu: 3600m
+    memory: 12G
+  requests:
+    cpu: 600m
+    memory: 2G
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 2
+  targetCPUUtilizationPercentage: 90 
+  # targetMemoryUtilizationPercentage: 80
+
+nodeSelector:
+  prowler: "true"
+
+tolerations: []
+
+affinity: {}
