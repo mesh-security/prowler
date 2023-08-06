@@ -2,7 +2,7 @@ name: Build and deploy prowler service
 on:
   push:
     branches:
-      - staging 
+      - devops_alignment 
 
 jobs:
   build:
