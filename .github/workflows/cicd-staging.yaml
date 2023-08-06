@@ -1,0 +1,89 @@
+name: Build and deploy prowler service
+on:
+  push:
+    branches:
+      - staging 
+
+jobs:
+  build:
+    name: Build Docker image
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGE }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGE }}
+          aws-region: us-east-2
+
+      - name: Set branch name
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/} | sed  -e 's#/#-#g')"
+        id: set_branch
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image-latest
+        run: |
+          docker build \
+            -t ${{ steps.login-ecr.outputs.registry }}/prowler:${{ steps.set_branch.outputs.branch }}-${{ github.sha }} \
+            -t ${{ steps.login-ecr.outputs.registry }}/prowler:${{ steps.set_branch.outputs.branch }}-latest \
+            .
+          docker push ${{ steps.login-ecr.outputs.registry }}/prowler:${{ steps.set_branch.outputs.branch }}-${{ github.sha }}
+          docker push ${{ steps.login-ecr.outputs.registry }}/prowler:${{ steps.set_branch.outputs.branch }}-latest
+
+  update_version:
+    name: Push updated tag
+    runs-on: ubuntu-20.04
+    needs: build
+    env:
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_STAGE }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_STAGE }}
+          aws-region: us-east-2
+
+      - name: Set branch name
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/} | sed  -e 's#/#-#g')"
+        id: set_branch
+
+      - name: Install SSH Client 🔑
+        uses: webfactory/ssh-agent@v0.4.0
+        with:
+          ssh-private-key: ${{ secrets.GITOPS_KEY }}
+
+      - name: Update version in repo
+        shell: bash
+        run: |
+            export CITAG=${{ steps.set_branch.outputs.branch }}-${{ github.sha }}
+            export ENVIRONMENT=staging
+            export GIT_BRANCH=staging
+            echo "TAG $CITAG for $GIT_BRANCH"
+
+            git clone git@github.com:mesh-security/mesh_environment.git
+            cd mesh_environment
+            git checkout devops_app
+            curl -Lo yq https://github.com/mikefarah/yq/releases/download/v4.11.2/yq_linux_amd64
+            chmod +x yq
+            ./yq e -i '.mesh_apps.prowler_version = strenv(CITAG)' environments/${ENVIRONMENT}/values.yaml
+            ./yq e -i '.mesh_apps.prowler_branch = strenv(GIT_BRANCH)' environments/${ENVIRONMENT}/values.yaml
+            git config credential.helper 'cache --timeout=120'
+            git config user.email "actions@mesh.security"
+            git config user.name "Github Actions"
+            git add .
+            git commit -m "Update from branch ${{ steps.set_branch.outputs.branch }} to environment ${ENVIRONMENT}, Prowler"
+            git push origin devops_app
